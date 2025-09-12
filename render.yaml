@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: signup-app
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DB_HOST
+        value: your_render_mysql_host
+      - key: DB_USER
+        value: your_render_mysql_user
+      - key: DB_PASSWORD
+        value: your_render_mysql_password
+      - key: DB_NAME
+        value: your_render_mysql_database
+      - key: PORT
+        value: 10000
