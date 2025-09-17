@@ -3,15 +3,17 @@ services:
     name: signup-app
     runtime: node
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node start.js
     envVars:
       - key: DB_HOST
-        value: your_render_mysql_host
+        value: dpg-d35aaeur433s738lkkug-a.oregon-postgres.render.com
       - key: DB_USER
-        value: your_render_mysql_user
+        value: signup_db_user
       - key: DB_PASSWORD
-        value: your_render_mysql_password
+        value: da6O7y41lXiMqZQgUZS6qLMxNO3KWumG
       - key: DB_NAME
-        value: your_render_mysql_database
+        value: signup_db
+      - key: DB_PORT
+        value: 5432
       - key: PORT
-        value: 10000
+        value: 10000   # web service port for your Node.js app
