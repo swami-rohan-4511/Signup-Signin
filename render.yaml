@@ -3,7 +3,7 @@ services:
     name: signup-app
     runtime: node
     buildCommand: npm install
-    startCommand: node start.js
+    startCommand: npm start
     envVars:
       - key: DB_HOST
         value: dpg-d35aaeur433s738lkkug-a.oregon-postgres.render.com
