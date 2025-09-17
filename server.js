@@ -1,5 +1,5 @@
 const express = require('express');
-const mysql = require('mysql2');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -16,22 +16,19 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Database connection
-const db = mysql.createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'signup_db',
-    port: process.env.DB_PORT || 3306
+const db = new Pool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT || 5432,
+    ssl: { rejectUnauthorized: false } // Render PostgreSQL requires SSL
 });
 
-// Connect to database
-db.connect((err) => {
-    if (err) {
-        console.error('Database connection failed:', err);
-        return;
-    }
-    console.log('Connected to MySQL database');
-});
+// Test database connection
+db.connect()
+    .then(() => console.log('✅ Connected to PostgreSQL database'))
+    .catch(err => console.error('❌ Database connection failed:', err));
 
 // Routes
 
@@ -60,7 +57,6 @@ app.post('/api/signup', async (req, res) => {
     try {
         const { username, email, password } = req.body;
 
-        // Validate input
         if (!username || !email || !password) {
             return res.status(400).json({ error: 'All fields are required' });
         }
@@ -69,35 +65,25 @@ app.post('/api/signup', async (req, res) => {
             return res.status(400).json({ error: 'Password must be at least 6 characters long' });
         }
 
-        // Check if user already exists
-        const checkUserQuery = 'SELECT id FROM users WHERE email = ? OR username = ?';
-        db.query(checkUserQuery, [email, username], async (err, results) => {
-            if (err) {
-                console.error('Database error:', err);
-                return res.status(500).json({ error: 'Database error' });
-            }
+        // Check if user exists
+        const checkUserQuery = 'SELECT id FROM users WHERE email = $1 OR username = $2';
+        const existingUser = await db.query(checkUserQuery, [email, username]);
 
-            if (results.length > 0) {
-                return res.status(400).json({ error: 'User with this email or username already exists' });
-            }
+        if (existingUser.rows.length > 0) {
+            return res.status(400).json({ error: 'User with this email or username already exists' });
+        }
 
-            // Hash password
-            const saltRounds = 10;
-            const hashedPassword = await bcrypt.hash(password, saltRounds);
+        // Hash password
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-            // Insert new user
-            const insertQuery = 'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)';
-            db.query(insertQuery, [username, email, hashedPassword], (err, result) => {
-                if (err) {
-                    console.error('Database error:', err);
-                    return res.status(500).json({ error: 'Failed to create user' });
-                }
+        // Insert user
+        const insertQuery = 'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id';
+        const result = await db.query(insertQuery, [username, email, hashedPassword]);
 
-                res.status(201).json({
-                    message: 'User created successfully',
-                    userId: result.insertId
-                });
-            });
+        res.status(201).json({
+            message: 'User created successfully',
+            userId: result.rows[0].id
         });
 
     } catch (error) {
@@ -107,44 +93,36 @@ app.post('/api/signup', async (req, res) => {
 });
 
 // Signin endpoint
-app.post('/api/signin', (req, res) => {
+app.post('/api/signin', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Validate input
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // Find user by email
-        const query = 'SELECT id, username, email, password_hash FROM users WHERE email = ?';
-        db.query(query, [email], async (err, results) => {
-            if (err) {
-                console.error('Database error:', err);
-                return res.status(500).json({ error: 'Database error' });
+        // Find user
+        const query = 'SELECT id, username, email, password_hash FROM users WHERE email = $1';
+        const result = await db.query(query, [email]);
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        const user = result.rows[0];
+        const isValidPassword = await bcrypt.compare(password, user.password_hash);
+
+        if (!isValidPassword) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        res.json({
+            message: 'Sign in successful',
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email
             }
-
-            if (results.length === 0) {
-                return res.status(401).json({ error: 'Invalid email or password' });
-            }
-
-            const user = results[0];
-
-            // Verify password
-            const isValidPassword = await bcrypt.compare(password, user.password_hash);
-            if (!isValidPassword) {
-                return res.status(401).json({ error: 'Invalid email or password' });
-            }
-
-            // Return success (you could add JWT tokens here for session management)
-            res.json({
-                message: 'Sign in successful',
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email
-                }
-            });
         });
 
     } catch (error) {
@@ -166,8 +144,7 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`Access the app at: http://localhost:${PORT}`);
+    console.log(`🚀 Server is running on port ${PORT}`);
 });
 
 module.exports = app;
